@@ -6,23 +6,6 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken"
 import mongoose from "mongoose";
 
-
-const generateAccessAndRefreshTokens = async(userId) =>{
-    try {
-        const user = await User.findById(userId)
-        const accessToken = user.generateAccessToken()
-        const refreshToken = user.generateRefreshToken()
-
-        user.refreshToken = refreshToken
-        await user.save({ validateBeforeSave: false })
-
-        return {accessToken, refreshToken}
-
-
-    } catch (error) {
-        throw new ApiError(500, "Something went wrong while generating referesh and access token")
-    }
-}
 const getPublicIdFromUrl = (url) => {
     // Assuming the URL has the format: "https://res.cloudinary.com/your_cloud_name/image/upload/v1234567890/user_avatars/profile_pic.jpg"
     const regex = /\/upload\/v\d+\/(.*?)(\.\w+)$/;
@@ -41,15 +24,12 @@ const registerUser = asyncHandler(async (req, res) => {
     if ([name, email, phone, password].some((field) => !field?.trim())) {
       throw new ApiError(400, "All fields are required");
     }
-    const existedUser= await User.findOne({
-        $or:[{email},{phone}]
-    })
-
+    const existedUser= await User.findOne({email})
     if(existedUser){
         throw new ApiError(409, "email or phone number already exists");
     }
     console.log(req.file);
-    const avatarLocalPath=req.file?.path;
+    const avatarLocalPath=await req.file?.path;
     console.log(avatarLocalPath);
     if(!avatarLocalPath){
         throw new ApiError(400,"Avatar file is required")
@@ -130,49 +110,6 @@ const logoutUser=asyncHandler(async (req,res)=>{
             .clearCookie("refreshToken",options).json(new ApiResponse(200,{},"User logged out"))
 });  
 
-const refreshAccessToken = asyncHandler(async (req, res) => {
-    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-    if (!incomingRefreshToken) {
-        throw new ApiError(401, "unauthorized request")
-    }
-
-    try {
-        const decodedToken = jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET)
-        const user = await User.findById(decodedToken?._id)
-    
-        if (!user) {
-            throw new ApiError(401, "Invalid refresh token")
-        }
-    
-        if (incomingRefreshToken !== user?.refreshToken) {
-            throw new ApiError(401, "Refresh token is expired or used")
-            
-        }
-    
-        const options = {
-            httpOnly: true,
-            secure: true
-        }
-    
-        const {accessToken, newRefreshToken} = await generateAccessAndRefreshTokens(user._id)
-    
-        return res
-        .status(200)
-        .cookie("accessToken", accessToken, options)
-        .cookie("refreshToken", newRefreshToken, options)
-        .json(
-            new ApiResponse(
-                200, 
-                {accessToken, refreshToken: newRefreshToken},
-                "Access token refreshed"
-            )
-        )
-    } catch (error) {
-        throw new ApiError(401, error?.message || "Invalid refresh token")
-    }
-
-})
-
 const changeCurrentPassword=asyncHandler(async(req,res)=>{
     const{oldPassword,newPassword}=req.body
     const user = await User.findById(req.user?._id)
@@ -194,9 +131,9 @@ const getCurrentUser=asyncHandler(async(req,res)=>{
 });
 
 const updateAccountDetails = asyncHandler(async(req, res) => {
-    const {fullName, email} = req.body
+    const {name, email,phone} = req.body
 
-    if (!fullName || !email) {
+    if (!name || !email) {
         throw new ApiError(400, "All fields are required")
     }
 
@@ -204,8 +141,9 @@ const updateAccountDetails = asyncHandler(async(req, res) => {
         req.user?._id,
         {
             $set: {
-                fullName,
-                email: email
+                name,
+                email: email,
+                phone
             }
         },
         {new: true}
@@ -253,13 +191,20 @@ const updateUserAvatar = asyncHandler(async(req, res) => {
         new ApiResponse(200, user, "Avatar image updated successfully")
     )
 })
-
+const checkAuth = (req, res) => {
+    try {
+      res.status(200).json(req.user);
+    } catch (error) {
+      console.log("Error in checkAuth controller", error.message);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
 
 export {
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccessToken,
+    checkAuth,
     changeCurrentPassword,
     getCurrentUser,
     updateAccountDetails,
