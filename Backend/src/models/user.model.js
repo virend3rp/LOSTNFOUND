@@ -20,16 +20,12 @@ const userSchema = new Schema({
     },
     avatar:{
         type:String,//cloudinary url
-        required:true,
+        default:"",
     },
     password:{
         type:String,
         required: [true,"Password is required"]
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-      }
+    }
   },{timestamps:true});
 
 export const User=mongoose.model("User",userSchema)
